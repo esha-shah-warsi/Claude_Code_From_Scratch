@@ -39,35 +39,51 @@ def main():
         }
     ]
 
-    chat = client.chat.completions.create(
-        model="anthropic/claude-haiku-4.5",
-        messages=[{"role": "user", "content": args.p}],
-        tools=tools,
-    )
+    # Initialize the conversation history with the user's prompt
+    messages = [{"role": "user", "content": args.p}]
 
-    if not chat.choices or len(chat.choices) == 0:
-        raise RuntimeError("no choices in response")
+    # The Agent Loop
+    while True:
+        chat = client.chat.completions.create(
+            model="anthropic/claude-haiku-4.5",
+            messages=messages,
+            tools=tools,
+        )
 
-    response_message = chat.choices[0].message
+        if not chat.choices or len(chat.choices) == 0:
+            raise RuntimeError("no choices in response")
 
-    # Check if the LLM wants to execute any tools
-    if response_message.tool_calls:
-        first_tool_call = response_message.tool_calls[0]
-        func_name = first_tool_call.function.name
+        response_message = chat.choices[0].message
 
-        if func_name == "Read":
-            # Arguments come back as a JSON string: '{"file_path": "apple.py"}'
-            args_dict = json.loads(first_tool_call.function.arguments)
-            file_path = args_dict["file_path"]
+        # Append the assistant's response to the conversation history
+        messages.append(response_message)
 
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+        # If the LLM has no more tool calls, print the final answer and exit the loop
+        if not response_message.tool_calls:
+            if response_message.content:
+                print(response_message.content)
+            break
 
-            print(content, end="")
-    else:
-        # If no tool was requested, print the regular text reply
-        if response_message.content:
-            print(response_message.content)
+        # Execute each tool requested by the model
+        for tool_call in response_message.tool_calls:
+            if tool_call.function.name == "Read":
+                args_dict = json.loads(tool_call.function.arguments)
+                file_path = args_dict["file_path"]
+
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        file_content = f.read()
+                except Exception as e:
+                    file_content = f"Error reading file: {str(e)}"
+
+                # Provide the tool execution result back to the model
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": file_content,
+                    }
+                )
 
 
 if __name__ == "__main__":
