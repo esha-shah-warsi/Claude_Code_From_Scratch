@@ -36,13 +36,32 @@ def main():
                     "required": ["file_path"],
                 },
             },
-        }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "Write",
+                "description": "Write content to a file",
+                "parameters": {
+                    "type": "object",
+                    "required": ["file_path", "content"],
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The path of the file to write to",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The content to write to the file",
+                        },
+                    },
+                },
+            },
+        },
     ]
 
-    # Initialize the conversation history with the user's prompt
     messages = [{"role": "user", "content": args.p}]
 
-    # The Agent Loop
     while True:
         chat = client.chat.completions.create(
             model="anthropic/claude-haiku-4.5",
@@ -54,36 +73,50 @@ def main():
             raise RuntimeError("no choices in response")
 
         response_message = chat.choices[0].message
-
-        # Append the assistant's response to the conversation history
         messages.append(response_message)
 
-        # If the LLM has no more tool calls, print the final answer and exit the loop
         if not response_message.tool_calls:
             if response_message.content:
                 print(response_message.content)
             break
 
-        # Execute each tool requested by the model
         for tool_call in response_message.tool_calls:
-            if tool_call.function.name == "Read":
-                args_dict = json.loads(tool_call.function.arguments)
-                file_path = args_dict["file_path"]
+            func_name = tool_call.function.name
+            args_dict = json.loads(tool_call.function.arguments)
 
+            if func_name == "Read":
+                file_path = args_dict["file_path"]
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
-                        file_content = f.read()
+                        tool_result = f.read()
                 except Exception as e:
-                    file_content = f"Error reading file: {str(e)}"
+                    tool_result = f"Error reading file: {str(e)}"
 
-                # Provide the tool execution result back to the model
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": file_content,
-                    }
-                )
+            elif func_name == "Write":
+                file_path = args_dict["file_path"]
+                content = args_dict["content"]
+                try:
+                    # Create directory path if it does not exist
+                    parent_dir = os.path.dirname(file_path)
+                    if parent_dir:
+                        os.makedirs(parent_dir, exist_ok=True)
+
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    tool_result = f"Successfully wrote to {file_path}"
+                except Exception as e:
+                    tool_result = f"Error writing file: {str(e)}"
+
+            else:
+                tool_result = f"Unknown tool: {func_name}"
+
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result,
+                }
+            )
 
 
 if __name__ == "__main__":
