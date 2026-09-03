@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 
@@ -47,7 +48,26 @@ def main():
     if not chat.choices or len(chat.choices) == 0:
         raise RuntimeError("no choices in response")
 
-    print(chat.choices[0].message.content)
+    response_message = chat.choices[0].message
+
+    # Check if the LLM wants to execute any tools
+    if response_message.tool_calls:
+        first_tool_call = response_message.tool_calls[0]
+        func_name = first_tool_call.function.name
+
+        if func_name == "Read":
+            # Arguments come back as a JSON string: '{"file_path": "apple.py"}'
+            args_dict = json.loads(first_tool_call.function.arguments)
+            file_path = args_dict["file_path"]
+
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            print(content, end="")
+    else:
+        # If no tool was requested, print the regular text reply
+        if response_message.content:
+            print(response_message.content)
 
 
 if __name__ == "__main__":
