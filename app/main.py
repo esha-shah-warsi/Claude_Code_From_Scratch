@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 from openai import OpenAI
@@ -58,6 +59,23 @@ def main():
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "Bash",
+                "description": "Execute a shell command",
+                "parameters": {
+                    "type": "object",
+                    "required": ["command"],
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The command to execute",
+                        },
+                    },
+                },
+            },
+        },
     ]
 
     messages = [{"role": "user", "content": args.p}]
@@ -96,7 +114,6 @@ def main():
                 file_path = args_dict["file_path"]
                 content = args_dict["content"]
                 try:
-                    # Create directory path if it does not exist
                     parent_dir = os.path.dirname(file_path)
                     if parent_dir:
                         os.makedirs(parent_dir, exist_ok=True)
@@ -106,6 +123,21 @@ def main():
                     tool_result = f"Successfully wrote to {file_path}"
                 except Exception as e:
                     tool_result = f"Error writing file: {str(e)}"
+
+            elif func_name == "Bash":
+                command = args_dict["command"]
+                try:
+                    res = subprocess.run(
+                        command,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    # Return stdout if available, otherwise stderr, or empty string on quiet success
+                    output = res.stdout + res.stderr
+                    tool_result = output if output else ""
+                except Exception as e:
+                    tool_result = f"Error running command: {str(e)}"
 
             else:
                 tool_result = f"Unknown tool: {func_name}"
